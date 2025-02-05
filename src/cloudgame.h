@@ -1,0 +1,21 @@
+#pragma once
+
+#ifndef CLOUDGAME_HEADER
+#define CLOUDGAME_HEADER
+
+#include <string>
+
+#define CLOUDGAME_API_URL           "http://10.202.9.24:7000/"
+#define CLOUDGAME_API_VERSION_1_URL CLOUDGAME_API_URL "v1/"
+
+#define CLOUDGAME_API_SELECTED_VERSION_URL CLOUDGAME_API_VERSION_1_URL
+
+#define CLOUDGAME_API_ENDPOINT_USER CLOUDGAME_API_SELECTED_VERSION_URL "user/"
+
+#define CLOUDGAME_API_ENDPOINT_USER_PROFILE CLOUDGAME_API_ENDPOINT_USER "profile/"
+
+namespace Cloudgame {
+    void Initialize();
+};
+
+#endif
