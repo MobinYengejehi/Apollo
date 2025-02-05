@@ -3,6 +3,7 @@
  * @brief Definitions for the nvhttp (GameStream) server.
  */
 // macros
+#include "Simple-Web-Server/server_https.hpp"
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 // standard includes
@@ -46,7 +47,6 @@ using namespace std::literals;
 namespace nvhttp {
 
   namespace fs = std::filesystem;
-  namespace pt = boost::property_tree;
 
   using p_named_cert_t = crypto::p_named_cert_t;
   using PERM = crypto::PERM;
@@ -1470,6 +1470,8 @@ namespace nvhttp {
 
     auto port_http = net::map_port(PORT_HTTP);
     auto port_https = net::map_port(PORT_HTTPS);
+    auto port_cloudgameHttp = net::map_port(PORT_CLOUDGAME_HTTP);
+
     auto address_family = net::af_from_enum_string(config::sunshine.address_family);
 
     bool clean_slate = config::sunshine.flags[config::flag::FRESH_STATE];
@@ -1488,6 +1490,7 @@ namespace nvhttp {
 
     https_server_t https_server { config::nvhttp.cert, config::nvhttp.pkey };
     http_server_t http_server;
+    http_server_t cloudgame_http_server;
 
     // Verify certificates after establishing connection
     https_server.verify = [](req_https_t req, SSL *ssl) {
@@ -1569,8 +1572,15 @@ namespace nvhttp {
     http_server.config.address = net::af_to_any_address_string(address_family);
     http_server.config.port = port_http;
 
-    auto accept_and_run = [&](auto *http_server) {
+    cloudgame_http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;
+
+    cloudgame_http_server.config.reuse_address = true;
+    http_server.config.address = net::af_to_any_address_string(address_family);
+    http_server.config.port = port_cloudgameHttp;
+
+    auto accept_and_run = [&](auto *http_server, uint16_t port) {
       try {
+        BOOST_LOG(info) << "Server started on port '"sv << port << "'"sv;
         http_server->start();
       }
       catch (boost::system::system_error &err) {
@@ -1584,8 +1594,9 @@ namespace nvhttp {
         return;
       }
     };
-    std::thread ssl { accept_and_run, &https_server };
-    std::thread tcp { accept_and_run, &http_server };
+    std::thread ssl          { accept_and_run, &https_server, port_https };
+    std::thread tcp          { accept_and_run, &http_server, port_http };
+    std::thread cloudgametcp { accept_and_run, &cloudgame_http_server, port_cloudgameHttp };
 
     // Wait for any event
     shutdown_event->view();
@@ -1594,9 +1605,11 @@ namespace nvhttp {
 
     https_server.stop();
     http_server.stop();
+    cloudgame_http_server.stop();
 
     ssl.join();
     tcp.join();
+    cloudgametcp.join();
   }
 
   std::string request_otp(const std::string& passphrase, const std::string& deviceName) {

@@ -29,6 +29,8 @@ namespace nvhttp {
   using args_t = SimpleWeb::CaseInsensitiveMultimap;
   using cmd_list_t = std::list<crypto::command_entry_t>;
 
+  namespace pt = boost::property_tree;
+
   /**
    * @brief The protocol version.
    * @details The version of the GameStream protocol we are mocking.
@@ -50,6 +52,11 @@ namespace nvhttp {
    * @brief The HTTPS port, as a difference from the config port.
    */
   constexpr auto PORT_HTTPS = -5;
+
+  /**
+   * @brief The Cloudgame HTTP Server port. as a difference from the config port.
+   */
+  constexpr auto PORT_CLOUDGAME_HTTP = -3;
 
   constexpr auto OTP_EXPIRE_DURATION = 180s;
 
