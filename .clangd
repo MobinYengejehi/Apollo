@@ -1,0 +1,4 @@
+CompileFlags:
+  Add:
+    # - -IC:\msys64\ucrt64\include
+    - -std=c++17
