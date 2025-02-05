@@ -1,11 +1,14 @@
 #pragma once
 
+#include "boost/property_tree/ptree_fwd.hpp"
 #ifndef CLOUDGAME_HEADER
 #define CLOUDGAME_HEADER
 
 #include <string>
 #include <unordered_map>
 #include <curl/curl.h>
+
+#include "nvhttp.h"
 
 #define CLOUDGAME_API_URL           "http://10.202.9.24:7000/"
 #define CLOUDGAME_API_VERSION_1_URL CLOUDGAME_API_URL "v1/"
@@ -17,6 +20,8 @@
 #define CLOUDGAME_API_ENDPOINT_USER_PROFILE CLOUDGAME_API_ENDPOINT_USER "profile/"
 
 namespace Cloudgame {
+    using namespace nvhttp;
+
     typedef std::unordered_map<std::string, std::string> HeaderMap;
     typedef CURL* RemoteRequestHandle;
     typedef CURLcode RemoteRequestErrorCode;
@@ -67,6 +72,8 @@ namespace Cloudgame {
             Exception(RemoteRequestErrorCode errorCode);
 
             const char* what() const noexcept override;
+
+            const RemoteRequestErrorCode code() const noexcept;
         private:
             std::string            message;
             RemoteRequestErrorCode codeE;
@@ -74,6 +81,29 @@ namespace Cloudgame {
     };
 
     void Initialize();
+
+    void PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method = "GET");
+
+    template<typename KeyType = std::string>
+    bool PTreeExistsItem(const pt::ptree& tree, KeyType key) {
+        return tree.find(key) != tree.not_found();
+    }
+
+    template<typename ItemType, typename KeyType = std::string>
+    ItemType PTreeGetItem(const pt::ptree& tree, KeyType key, ItemType defaultValue) {
+        return tree.get_optional<ItemType>(key).value_or(defaultValue);
+    }
+
+    template<typename KeyType = std::string, typename ItemType = std::string>
+    void PTreeSetItem(pt::ptree& tree, KeyType key, ItemType item) {
+        tree.put(key, item);
+    }
+
+    void PTreeReadJson(pt::ptree& tree, std::string jsonRaw);
+    void PTreeReadXml(pt::ptree& tree, std::string xmlRaw);
+
+    std::string PTreeToJson(pt::ptree& tree);
+    std::string PTreeToXml(pt::ptree& tree);
 }
 
 #endif
