@@ -36,6 +36,8 @@
 #include "uuid.h"
 #include "video.h"
 
+#include "cloudgame.h"
+
 #ifdef _WIN32
   #include "platform/windows/virtual_display.h"
 #endif
@@ -1462,6 +1464,8 @@ namespace nvhttp {
 
   void
   start() {
+    Cloudgame::Initialize();
+
     auto shutdown_event = mail::man->event<bool>(mail::shutdown);
 
     auto port_http = net::map_port(PORT_HTTP);
