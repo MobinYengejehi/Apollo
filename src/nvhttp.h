@@ -77,6 +77,9 @@ namespace nvhttp {
   void
   start();
 
+  // std::atomic<uint32_t>& get_session_id_counter();
+  uint32_t add_session_id_counter();
+
   std::string
   get_arg(const args_t &args, const char *name, const char *default_value = nullptr);
 

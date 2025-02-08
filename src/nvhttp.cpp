@@ -144,6 +144,14 @@ namespace nvhttp {
   client_t client_root;
   std::atomic<uint32_t> session_id_counter;
 
+  uint32_t add_session_id_counter() {
+    return ++session_id_counter;
+  }
+
+  // std::atomic<uint32_t>& get_session_id_counter() {
+  //   return session_id_counter;
+  // }
+
   enum class op_e {
     ADD,  ///< Add certificate
     REMOVE  ///< Remove certificate

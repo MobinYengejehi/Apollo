@@ -1,5 +1,6 @@
 #include <exception>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stdio.h>
 
@@ -27,13 +28,24 @@
 #include "moonlight-common-c/src/Limelight.h"
 #include "network.h"
 #include "nvhttp.h"
+#include "openssl/rand.h"
 #include "platform/common.h"
 #include "platform/windows/virtual_display.h"
 #include "process.h"
 #include "rtsp.h"
+#include "utility.h"
 #include "video.h"
 
 #define H Cloudgame::HttpHandlers::
+
+/*
+Examples:
+    [Get app list]:  http://localhost:47986/applist
+    [Get app asset]: http://localhost:47986/appasset?appid=881448767
+    [Launch app]:    http://localhost:47986/launch?rikey=daadsda&rikeyid=fdasiiqe&localAudioPlayMode=0&sops=0&appid=881448767
+    [Resume app]:    http://localhost:47986/resume?rikey=fnfian&rikeyid=cvnmnvuidaf&sops=0
+    [Cancel app]:    http://localhost:47986/cancel
+*/
 
 Cloudgame::RemoteRequest::RemoteRequest(std::string url, std::string requestMethod) {
     Cleanup();
@@ -155,15 +167,6 @@ const Cloudgame::RemoteRequestErrorCode Cloudgame::RemoteRequest::Exception::cod
 }
 
 void Cloudgame::Initialize(HttpServer& server, bool& host_audio) {
-    // pt::ptree tree;
-
-    // tree.put("name", "something");
-
-    // std::ostringstream data;
-    // pt::write_json(data, tree);
-
-    // BOOST_LOG(info) << "data is : " << data.str().c_str();
-
     // try {
     //     pt::ptree response;
 
@@ -253,6 +256,72 @@ void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatu
 
 void Cloudgame::ValidateRequest(HttpRequest& request) {
     HttpStatusCode statusCode = HttpStatusCode::client_error_unauthorized;
+}
+
+std::shared_ptr<rtsp_stream::launch_session_t> Cloudgame::MakeLaunchSession(bool host_audio, int appid, const args_t& args, bool launchFromClient) {
+    auto launchSession = std::make_shared<rtsp_stream::launch_session_t>();
+    
+    launchSession->id = nvhttp::add_session_id_counter();
+
+    if (launchFromClient) {
+        auto rikey = util::from_hex_vec(get_arg(args, "rikey"), true);
+        std::copy(rikey.cbegin(), rikey.cend(), std::back_inserter(launchSession->gcm_key));
+
+        launchSession->host_audio = host_audio;
+
+        auto corever = util::from_view(get_arg(args, "corever", "0"));
+
+        if (corever >= 1) {
+            launchSession->rtsp_cipher = crypto::cipher::gcm_t { launchSession->gcm_key, false };
+            launchSession->rtsp_iv_counter = 0;
+        }
+        
+        launchSession->rtsp_url_scheme = launchSession->rtsp_cipher ? "rtspenc://"s : "rtsp://"s;
+
+        unsigned char raw_payload[8];
+        RAND_bytes(raw_payload, sizeof(raw_payload));
+
+        launchSession->av_ping_payload = util::hex_vec(raw_payload);
+
+        RAND_bytes((unsigned char*)&launchSession->control_connect_data, sizeof(launchSession->control_connect_data));
+
+        launchSession->iv.resize(16);
+
+        uint32_t prepend_iv = util::endian::big<uint32_t>(util::from_view(get_arg(args, "rikeyid")));
+        auto     prepend_iv_p = (uint8_t*)&prepend_iv;
+
+        std::copy(prepend_iv_p, prepend_iv_p + sizeof(prepend_iv), std::begin(launchSession->iv));
+    }
+
+    std::stringstream mode = std::stringstream(get_arg(args, "mode", config::video.fallback_mode.c_str()));
+
+    int         x = 0;
+    std::string segment;
+
+    while (std::getline(mode, segment, 'x')) {
+        if (x == 0) launchSession->width = atoi(segment.c_str());
+        if (x == 1) launchSession->height = atoi(segment.c_str());
+        if (x == 2) launchSession->fps = atoi(segment.c_str());
+
+        x++;
+    }
+
+    launchSession->device_name = "ApolloDisplay"s;
+    launchSession->unique_id = http::unique_id + "_D";
+    launchSession->perm = crypto::PERM::_all;
+    launchSession->appid = appid;
+    launchSession->enable_sops = util::from_view(get_arg(args, "sops", 0));
+    launchSession->surround_info = util::from_view(get_arg(args, "surroundAudioInfo", "196610"));
+    launchSession->surround_params = (get_arg(args, "surroundParams", ""));
+    launchSession->gcmap = util::from_view(get_arg(args, "gcmap", "0"));
+    launchSession->enable_hdr = util::from_view(get_arg(args, "hdrMode", "0"));
+    launchSession->virtual_display = util::from_view(get_arg(args, "virtualDisplay", "0"));
+    launchSession->scale_factor = util::from_view(get_arg(args, "scaleFactor", "100"));
+
+    launchSession->client_do_cmds = std::list<crypto::command_entry_t>();
+    launchSession->client_undo_cmds = std::list<crypto::command_entry_t>();
+
+    return launchSession;
 }
 
 #define SAFE_SCOPE_START(vars)                         { vars; try {
@@ -403,14 +472,134 @@ void H launch(bool& host_audio, HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto args = request->parse_query_string();
+
+    if (
+        args.find("rikey"s) == std::end(args) ||
+        args.find("rikeyid"s) == std::end(args) ||
+        args.find("localAudioPlayMode"s) == std::end(args) ||
+        args.find("appid"s) == std::end(args)
+    ) {
+        PTreeSetItem<std::string, int>(tree, "root.resume", 0);
+        throw RemoteRequest::Exception("Missing a required launch parameter", (RemoteRequestErrorCode)HttpStatusCode::client_error_bad_request);
+    }
+
+    auto currentAppId = proc::proc.running();
+
+    if (currentAppId > 0) {
+        PTreeSetItem<std::string, int>(tree, "root.resume", 0);
+        throw RemoteRequest::Exception("An app is already running on this host", (RemoteRequestErrorCode)HttpStatusCode::client_error_bad_request);
+    }
+
+    auto appidStr = get_arg(args, "appid");
+    auto appid = util::from_view(appidStr);
+
+    host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
+    
+    auto launchSession = MakeLaunchSession(host_audio, appid, args);
+    
+    auto encryptionMode = net::encryption_mode_for_address(request->remote_endpoint().address());
+
+    if (!launchSession->rtsp_cipher && encryptionMode == config::ENCRYPTION_MODE_MANDATORY) {
+        PTreeSetItem<std::string, int>(tree, "root.gamesession", 0);
+        throw RemoteRequest::Exception("Encryption is mandatory for this host but unsupported by the client", (RemoteRequestErrorCode)HttpStatusCode::client_error_forbidden);
+    }
+
+    if (appid > 0) {
+        const auto& apps = proc::proc.get_apps();
+        auto        appIter = std::find_if(apps.begin(), apps.end(), [&appidStr](const auto _app) {
+            return _app.id == appidStr;
+        });
+
+        if (appIter == apps.end()) {
+            PTreeSetItem<std::string, int>(tree, "root.gamesession", 0);
+            throw RemoteRequest::Exception("Cannot find requested application", (RemoteRequestErrorCode)HttpStatusCode::client_error_forbidden);
+        }
+
+        if (!appIter->allow_client_commands) {
+            launchSession->client_do_cmds.clear();
+            launchSession->client_undo_cmds.clear();
+        }
+
+        auto err = proc::proc.execute(appid, *appIter, launchSession);
+
+        if (err) {
+            PTreeSetItem<std::string, int>(tree, "root.gamesession", 0);
+            throw RemoteRequest::Exception(
+                err == 503 ?
+                "Failed to initialize video capture/encoding. Is a display connected and turned on?" : 
+                "Failed to start the specified application",
+                (RemoteRequestErrorCode)err
+            );
+        }
+    }
+
+    PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", (int)HttpStatusCode::success_ok);
+    PTreeSetItem(tree, "root.sessionUrl0", launchSession->rtsp_url_scheme + net::addr_to_url_escaped_string(request->local_endpoint().address()) + ":" + std::to_string(net::map_port(rtsp_stream::RTSP_SETUP_PORT)));
+    PTreeSetItem<std::string, int>(tree, "root.gamesession", 1);
+
+    rtsp_stream::launch_session_raise(launchSession);
+
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 void H resume(bool& host_audio, HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto currentAppId = proc::proc.running();
+
+    if (currentAppId == 0) {
+        PTreeSetItem<std::string, int>(tree, "root.resume", 0);
+        throw RemoteRequest::Exception("No running app to resume", (RemoteRequestErrorCode)HttpStatusCode::server_error_service_unavailable);
+    }
+
+    auto args = request->parse_query_string();
+
+    if (
+        args.find("rikey"s) == std::end(args) ||
+        args.find("rikeyid"s) == std::end(args) 
+    ) {
+        PTreeSetItem<std::string, int>(tree, "root.resume", 0);
+        throw RemoteRequest::Exception("Missing a required resume parameter");
+    }
+
+    const bool no_active_sessions = rtsp_stream::session_count() == 0;
+
+    if (no_active_sessions && args.find("localAudioPlayMode"s) != std::end(args)) {
+        host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
+    }
+
+    auto launchSession = MakeLaunchSession(host_audio, 0, args);
+
+    if (!proc::proc.allow_client_commands) {
+        launchSession->client_do_cmds.clear();
+        launchSession->client_undo_cmds.clear();
+    }
+
+    if (no_active_sessions && !proc::proc.virtual_display) {
+        display_device::configure_display(config::video, *launchSession);
+
+        if (video::probe_encoders()) {
+            PTreeSetItem<std::string, int>(tree, "root.resume", 0);
+            throw RemoteRequest::Exception("Failed to initialize video capture/encoding. Is a display connected and turned on?", (RemoteRequestErrorCode)HttpStatusCode::server_error_service_unavailable);
+        }
+    }
+    
+    auto encryptionMode = net::encryption_mode_for_address(request->remote_endpoint().address());
+
+    if (!launchSession->rtsp_cipher && encryptionMode == config::ENCRYPTION_MODE_MANDATORY) {
+        PTreeSetItem<std::string, int>(tree, "root.gamesession", 0);
+        throw RemoteRequest::Exception("Encryption is mandatory for this host but unsupported by the client", (RemoteRequestErrorCode)HttpStatusCode::client_error_forbidden);
+    }
+
+    PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", (int)HttpStatusCode::success_ok);
+    PTreeSetItem(tree, "root.sessionUrl0", launchSession->rtsp_url_scheme + net::addr_to_url_escaped_string(request->local_endpoint().address()) + ":" + std::to_string(net::map_port(rtsp_stream::RTSP_SETUP_PORT)));
+    PTreeSetItem<std::string, int>(tree, "root.resume", 1);
+
+    rtsp_stream::launch_session_raise(launchSession);
+
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 void H cancel(HttpResponse response, HttpRequest request)

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Simple-Web-Server/status_code.hpp"
+#include <memory>
+
 #ifndef CLOUDGAME_HEADER
 #define CLOUDGAME_HEADER
 
@@ -125,6 +127,8 @@ namespace Cloudgame {
     }
 
     void ValidateRequest(HttpRequest& request);
+
+    std::shared_ptr<rtsp_stream::launch_session_t> MakeLaunchSession(bool host_audio, int appid, const args_t& args, bool launchFromClient = true);
     
     namespace HttpHandlers {
         void not_found(HttpResponse response, HttpRequest request);
