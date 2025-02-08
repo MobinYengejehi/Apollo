@@ -19,6 +19,7 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
+#include <string>
 
 #include "display_device.h"
 #include "httpcommon.h"
@@ -251,7 +252,7 @@ void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatu
 }
 
 void Cloudgame::ValidateRequest(HttpRequest& request) {
-    
+    HttpStatusCode statusCode = HttpStatusCode::client_error_unauthorized;
 }
 
 #define SAFE_SCOPE_START(vars)                         { vars; try {
@@ -434,14 +435,38 @@ void H get_clipboard(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto args = request->parse_query_string();
+    auto clipboardType = get_arg(args, "type");
+
+    if (clipboardType != "text"sv) {
+        throw RemoteRequest::Exception(std::string("Clipboard type [") + clipboardType + "] is not supported!");\
+    }
+
+    std::string content = platf::get_clipboard();
+
+    WriteResponse<std::string&>(response, content);
 SAFE_SCOPE_END(response, tree)
 
 void H set_clipboard(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto args = request->parse_query_string();
+    auto clipboardType = get_arg(args, "type");
+
+    if (clipboardType != "text"sv) {
+        throw RemoteRequest::Exception(std::string("Clipboard type [") + clipboardType + "] is not supported!");
+    }
+
+    std::string content = request->content.string();
+
+    bool success = platf::set_clipboard(content);
+
+    if (!success) {
+        throw RemoteRequest::Exception("Setting clipboard failed!");
+    }
+    
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 #undef SAFE_SCOPE_START
