@@ -6,6 +6,8 @@
 #include "Simple-Web-Server/status_code.hpp"
 #include "boost/log/sources/record_ostream.hpp"
 #include "boost/property_tree/ptree_fwd.hpp"
+#include "config.h"
+#include "crypto.h"
 #include "curl/curl.h"
 #include "curl/easy.h"
 
@@ -17,7 +19,15 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
+#include "httpcommon.h"
 #include "logging.h"
+#include "moonlight-common-c/src/Limelight.h"
+#include "network.h"
+#include "nvhttp.h"
+#include "platform/common.h"
+#include "platform/windows/virtual_display.h"
+#include "process.h"
+#include "video.h"
 
 #define H Cloudgame::HttpHandlers::
 
@@ -258,14 +268,116 @@ void H serverinfo(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto localEndpoint = request->local_endpoint();
+
+    PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", 200);
+    PTreeSetItem(tree, "root.hostname", config::nvhttp.sunshine_name);
+
+    PTreeSetItem(tree, "root.appversion", VERSION);
+    PTreeSetItem(tree, "root.GfeVersion", GFE_VERSION);
+    PTreeSetItem(tree, "root.uniqueid", http::unique_id);
+    PTreeSetItem<std::string, uint16_t>(tree, "root.HttpsPort", net::map_port(PORT_HTTPS));
+    PTreeSetItem<std::string, uint16_t>(tree, "root.ExternalPort", net::map_port(PORT_HTTP));
+    PTreeSetItem<std::string, uint16_t>(tree, "root.CloudgamePort", net::map_port(PORT_CLOUDGAME_HTTP));
+    PTreeSetItem(tree, "root.MaxLumaPixelsHEVC", video::active_hevc_mode > 1 ? "1869449984" : "0");
+
+    PTreeSetItem(tree, "root.mac", platf::get_mac_address(net::addr_to_normalized_string(localEndpoint.address())));
+
+    pt::ptree& rootNode = tree.get_child("root");
+
+    if (config::sunshine.server_cmds.size() > 0) {
+        for (const auto& cmd : config::sunshine.server_cmds) {
+            pt::ptree cmdNode;
+
+            cmdNode.put_value(cmd.cmd_name);
+
+            rootNode.push_back(std::make_pair("ServerCommand", cmdNode));
+        }
+    }
+
+    PTreeSetItem<std::string, int>(tree, "root.Permission", (int)crypto::PERM::_all);
+
+    #ifdef _WIN32
+        PTreeSetItem<std::string, bool>(tree, "root.VirtualDisplayCapable", true);
+        PTreeSetItem<std::string, bool>(tree, "root.VirtualDisplayDriverReady", proc::vDisplayDriverStatus == VDISPLAY::DRIVER_STATUS::OK);
+    #endif
+
+    if (localEndpoint.address().is_v6() && !localEndpoint.address().to_v6().is_v4_mapped()) {
+        PTreeSetItem(tree, "root.LocalIP", "127.0.0.1");
+    } else {
+        PTreeSetItem(tree, "root.LocalIP", net::addr_to_normalized_string(localEndpoint.address()));
+    }
+
+    uint32_t codec_mode_flags = SCM_H264;
+
+    if (video::last_encoder_probe_supported_yuv444_for_codec[0]) {
+        codec_mode_flags |= SCM_H264_HIGH8_444;
+    }
+
+    if (video::active_hevc_mode >= 2) {
+        codec_mode_flags |= SCM_HEVC;
+
+        if (video::last_encoder_probe_supported_yuv444_for_codec[1]) {
+            codec_mode_flags |= SCM_HEVC_REXT8_444;
+        }
+    }
+
+    if (video::active_hevc_mode >= 3) {
+        codec_mode_flags |= SCM_HEVC_MAIN10;
+
+        if (video::last_encoder_probe_supported_yuv444_for_codec[1]) {
+            codec_mode_flags |= SCM_HEVC_REXT10_444;
+        }
+    }
+
+    if (video::active_av1_mode >= 2) {
+        codec_mode_flags |= SCM_AV1_MAIN8;
+
+        if (video::last_encoder_probe_supported_yuv444_for_codec[2]) {
+            codec_mode_flags |= SCM_AV1_HIGH8_444;
+        }
+    }
+
+    if (video::active_av1_mode >= 3) {
+        codec_mode_flags |= SCM_AV1_MAIN10;
+
+        if (video::last_encoder_probe_supported_yuv444_for_codec[2]) {
+            codec_mode_flags |= SCM_AV1_HIGH10_444;
+        }
+    }
+
+    PTreeSetItem(tree, "root.ServerCodecModeSupport", codec_mode_flags);
+
+    PTreeSetItem<std::string, int>(tree, "root.PairStatus", 1);
+
+    auto currentAppId = proc::proc.running();
+
+    PTreeSetItem<std::string, int>(tree, "root.currentgame", currentAppId);
+    PTreeSetItem(tree, "root.state", currentAppId > 0 ? "SUNSHINE_SERVER_BUSY" : "SUNSHINE_SERVER_FREE");
+    
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 void H app_list(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto& apps = tree.add_child("root", pt::ptree());
+
+    PTreeSetItem<std::string, int>(apps, "<xmlattr>.status_code", 200);
+
+    for (auto& app : proc::proc.get_apps()) {
+        pt::ptree appNode;
+
+        PTreeSetItem<std::string, int>(appNode, "IsHdrSupported", video::active_hevc_mode == 3 ? 1 : 0);
+        PTreeSetItem(appNode, "AppTitle"s, app.name);
+        PTreeSetItem(appNode, "UUID", app.uuid);
+        PTreeSetItem(appNode, "ID", app.id);
+
+        apps.push_back(std::make_pair("App", std::move(appNode)));
+    }
+    
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 void H app_asset(HttpResponse response, HttpRequest request)
