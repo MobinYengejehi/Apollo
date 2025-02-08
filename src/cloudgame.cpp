@@ -1,4 +1,5 @@
 #include <exception>
+#include <fstream>
 #include <sstream>
 #include <stdio.h>
 
@@ -239,10 +240,10 @@ std::string Cloudgame::PTreeToXml(pt::ptree& tree) {
     return xmlRawStream.str();
 }
 
-void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode) {
+void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode, SimpleWeb::CaseInsensitiveMultimap headers) {
     std::string responseBuffer = PTreeToXml(tree);
 
-    response->write(statusCode, responseBuffer.data());
+    response->write(statusCode, responseBuffer.data(), headers);
 
     response->close_connection_after_response = true;
 }
@@ -384,7 +385,15 @@ void H app_asset(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    auto args = request->parse_query_string();
+    auto appImage = proc::proc.get_app_image(util::from_view(get_arg(args, "appid")));
+
+    std::ifstream in(appImage, std::ios::binary);
+
+    SimpleWeb::CaseInsensitiveMultimap headers;
+    headers.emplace("Content-Type", "image/png");
+
+    WriteResponse<std::ifstream&>(response, in, HttpStatusCode::success_ok, headers);
 SAFE_SCOPE_END(response, tree)
 
 void H launch(bool& host_audio, HttpResponse response, HttpRequest request)

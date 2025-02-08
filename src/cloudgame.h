@@ -115,7 +115,14 @@ namespace Cloudgame {
     std::string PTreeToJson(pt::ptree& tree);
     std::string PTreeToXml(pt::ptree& tree);
 
-    void WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode = HttpStatusCode::success_ok);
+    void WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode = HttpStatusCode::success_ok, SimpleWeb::CaseInsensitiveMultimap headers = SimpleWeb::CaseInsensitiveMultimap());
+
+    template<typename StreamType>
+    void WriteResponse(HttpResponse& response, StreamType stream, HttpStatusCode statusCode = HttpStatusCode::success_ok, SimpleWeb::CaseInsensitiveMultimap headers = SimpleWeb::CaseInsensitiveMultimap()) {
+        response->write(statusCode, stream, headers);
+
+        response->close_connection_after_response = true;
+    }
 
     void ValidateRequest(HttpRequest& request);
     
