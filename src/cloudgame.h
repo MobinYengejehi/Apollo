@@ -1,8 +1,10 @@
 #pragma once
 
-#include "boost/property_tree/ptree_fwd.hpp"
+#include "Simple-Web-Server/status_code.hpp"
 #ifndef CLOUDGAME_HEADER
 #define CLOUDGAME_HEADER
+
+#include "boost/property_tree/ptree_fwd.hpp"
 
 #include <string>
 #include <unordered_map>
@@ -25,6 +27,14 @@ namespace Cloudgame {
     typedef std::unordered_map<std::string, std::string> HeaderMap;
     typedef CURL* RemoteRequestHandle;
     typedef CURLcode RemoteRequestErrorCode;
+
+    typedef resp_http_t HttpResponse;
+    typedef req_http_t HttpRequest;
+
+    typedef https_server_t HttpsServer;
+    typedef http_server_t HttpServer;
+
+    #define HttpStatusCode SimpleWeb::StatusCode
 
     class RemoteRequest {
     protected:
@@ -80,7 +90,7 @@ namespace Cloudgame {
         };
     };
 
-    void Initialize();
+    void Initialize(HttpServer& server, bool& host_audio);
 
     void PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method = "GET");
 
@@ -104,6 +114,26 @@ namespace Cloudgame {
 
     std::string PTreeToJson(pt::ptree& tree);
     std::string PTreeToXml(pt::ptree& tree);
+
+    void WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode = HttpStatusCode::success_ok);
+
+    void ValidateRequest(HttpRequest& request);
+    
+    namespace HttpHandlers {
+        void not_found(HttpResponse response, HttpRequest request);
+        
+        void serverinfo(HttpResponse response, HttpRequest request);
+        
+        void app_list(HttpResponse response, HttpRequest request);
+        void app_asset(HttpResponse repsonse, HttpRequest request);
+
+        void launch(bool& host_audio, HttpResponse response, HttpRequest request);
+        void resume(bool& host_audio, HttpResponse response, HttpRequest request);
+        void cancel(HttpResponse response, HttpRequest request);
+
+        void get_clipboard(HttpResponse respons, HttpRequest request);
+        void set_clipboard(HttpResponse response, HttpRequest request);
+    };
 }
 
 #endif

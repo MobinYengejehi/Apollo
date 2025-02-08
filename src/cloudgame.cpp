@@ -1,7 +1,9 @@
+#include <exception>
 #include <sstream>
 #include <stdio.h>
 
 #include "cloudgame.h"
+#include "Simple-Web-Server/status_code.hpp"
 #include "boost/log/sources/record_ostream.hpp"
 #include "boost/property_tree/ptree_fwd.hpp"
 #include "curl/curl.h"
@@ -17,8 +19,7 @@
 
 #include "logging.h"
 
-// - -IC:\msys64\ucrt64\include
-// - -IC:\msys64\ucrt64\include\c++\14.2.0
+#define H Cloudgame::HttpHandlers::
 
 Cloudgame::RemoteRequest::RemoteRequest(std::string url, std::string requestMethod) {
     Cleanup();
@@ -139,7 +140,7 @@ const Cloudgame::RemoteRequestErrorCode Cloudgame::RemoteRequest::Exception::cod
     return codeE;
 }
 
-void Cloudgame::Initialize() {
+void Cloudgame::Initialize(HttpServer& server, bool& host_audio) {
     // pt::ptree tree;
 
     // tree.put("name", "something");
@@ -149,15 +150,23 @@ void Cloudgame::Initialize() {
 
     // BOOST_LOG(info) << "data is : " << data.str().c_str();
 
-    try {
-        pt::ptree response;
+    // try {
+    //     pt::ptree response;
 
-
-
-        PerformAPIRequest(response, CLOUDGAME_API_ENDPOINT_USER_PROFILE);
-    } catch (const RemoteRequest::Exception& exc) {
-        BOOST_LOG(error) << exc.what() << " | " << exc.code();
-    }
+    //     PerformAPIRequest(response, CLOUDGAME_API_ENDPOINT_USER_PROFILE);
+    // } catch (const std::exception& exc) {
+    //     BOOST_LOG(error) << exc.what();
+    // }
+    
+    server.default_resource["GET"] = H not_found;
+    server.resource["^/serverinfo$"]["GET"] = H serverinfo;
+    server.resource["^/applist$"]["GET"] = H app_list;
+    server.resource["^/appasset$"]["GET"] = H app_asset;
+    server.resource["^/launch$"]["GET"] = [&host_audio](HttpResponse response, HttpRequest request) { H launch(host_audio, response, request); };
+    server.resource["^/resume$"]["GET"] = [&host_audio](HttpResponse response, HttpRequest request) { H resume(host_audio, response, request); };
+    server.resource["^/cancel$"]["GET"] = H cancel;
+    server.resource["^/actions/clipboard$"]["GET"] = H get_clipboard;
+    server.resource["^/actions/clipboard$"]["POST"] = H set_clipboard;
 
     BOOST_LOG(info) << "'Cloudgame Service' started working.";
 }
@@ -219,3 +228,90 @@ std::string Cloudgame::PTreeToXml(pt::ptree& tree) {
 
     return xmlRawStream.str();
 }
+
+void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatusCode statusCode) {
+    std::string responseBuffer = PTreeToXml(tree);
+
+    response->write(statusCode, responseBuffer.data());
+
+    response->close_connection_after_response = true;
+}
+
+void Cloudgame::ValidateRequest(HttpRequest& request) {
+    
+}
+
+#define SAFE_SCOPE_START(vars)                         { vars; try {
+#define SAFE_SCOPE_END(response, tree)                 } catch (const std::exception& ex) { HttpStatusCode statusCode = HttpStatusCode::client_error_bad_request; PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", (int)statusCode); PTreeSetItem(tree, "root.<xmlattr>.status_message", ex.what()); WriteResponse(response, tree, statusCode); } }
+#define SAFE_SCOPE_END_SC(response, tree, status_code) } catch (const std::exception& ex) { HttpStatusCode statusCode = status_code; PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", (int)statusCode); PTreeSetItem(tree, "root.<xmlattr>.status_message", ex.what()); WriteResponse(response, tree, statusCode); } }
+
+void H not_found(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    HttpStatusCode statusCode = HttpStatusCode::client_error_not_found;
+
+    PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", (int)statusCode);
+
+    WriteResponse(response, tree, statusCode);
+SAFE_SCOPE_END(response, tree)
+
+void H serverinfo(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H app_list(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H app_asset(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H launch(bool& host_audio, HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H resume(bool& host_audio, HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H cancel(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H get_clipboard(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+void H set_clipboard(HttpResponse response, HttpRequest request)
+SAFE_SCOPE_START(pt::ptree tree)
+    ValidateRequest(request);
+
+    not_found(response, request);
+SAFE_SCOPE_END(response, tree)
+
+#undef SAFE_SCOPE_START
+#undef SAFE_SCOPE_END
+#undef SAFE_SCOPE_END_SC
+
+#undef H

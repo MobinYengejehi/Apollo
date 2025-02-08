@@ -31,6 +31,14 @@ namespace nvhttp {
 
   namespace pt = boost::property_tree;
 
+  using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<class SunshineHTTPS>::Response>;
+  using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<class SunshineHTTPS>::Request>;
+  using resp_http_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Response>;
+  using req_http_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Request>;
+
+  using https_server_t = class SunshineHTTPSServer;
+  using http_server_t = SimpleWeb::Server<SimpleWeb::HTTP>;
+
   /**
    * @brief The protocol version.
    * @details The version of the GameStream protocol we are mocking.

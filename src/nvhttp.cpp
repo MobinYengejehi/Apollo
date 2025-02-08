@@ -134,9 +134,6 @@ namespace nvhttp {
     }
   };
 
-  using https_server_t = SunshineHTTPSServer;
-  using http_server_t = SimpleWeb::Server<SimpleWeb::HTTP>;
-
   struct conf_intern_t {
     std::string servercert;
     std::string pkey;
@@ -146,11 +143,6 @@ namespace nvhttp {
   std::unordered_map<std::string, pair_session_t> map_id_sess;
   client_t client_root;
   std::atomic<uint32_t> session_id_counter;
-
-  using resp_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Response>;
-  using req_https_t = std::shared_ptr<typename SimpleWeb::ServerBase<SunshineHTTPS>::Request>;
-  using resp_http_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Response>;
-  using req_http_t = std::shared_ptr<typename SimpleWeb::ServerBase<SimpleWeb::HTTP>::Request>;
 
   enum class op_e {
     ADD,  ///< Add certificate
@@ -1464,8 +1456,6 @@ namespace nvhttp {
 
   void
   start() {
-    Cloudgame::Initialize();
-
     auto shutdown_event = mail::man->event<bool>(mail::shutdown);
 
     auto port_http = net::map_port(PORT_HTTP);
@@ -1572,11 +1562,13 @@ namespace nvhttp {
     http_server.config.address = net::af_to_any_address_string(address_family);
     http_server.config.port = port_http;
 
-    cloudgame_http_server.default_resource["GET"] = not_found<SimpleWeb::HTTP>;
+    // cloudgame_http_server.default_resource["GET"] = Cloudgame::HttpHandlers::not_found;
+
+    Cloudgame::Initialize(cloudgame_http_server, host_audio);
 
     cloudgame_http_server.config.reuse_address = true;
-    http_server.config.address = net::af_to_any_address_string(address_family);
-    http_server.config.port = port_cloudgameHttp;
+    cloudgame_http_server.config.address = net::af_to_any_address_string(address_family);
+    cloudgame_http_server.config.port = port_cloudgameHttp;
 
     auto accept_and_run = [&](auto *http_server, uint16_t port) {
       try {
