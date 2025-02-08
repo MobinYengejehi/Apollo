@@ -20,6 +20,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 
+#include "display_device.h"
 #include "httpcommon.h"
 #include "logging.h"
 #include "moonlight-common-c/src/Limelight.h"
@@ -28,6 +29,7 @@
 #include "platform/common.h"
 #include "platform/windows/virtual_display.h"
 #include "process.h"
+#include "rtsp.h"
 #include "video.h"
 
 #define H Cloudgame::HttpHandlers::
@@ -414,7 +416,18 @@ void H cancel(HttpResponse response, HttpRequest request)
 SAFE_SCOPE_START(pt::ptree tree)
     ValidateRequest(request);
 
-    not_found(response, request);
+    PTreeSetItem<std::string, int>(tree, "root.cancel", 1);
+    PTreeSetItem<std::string, int>(tree, "root.<xmlattr>.status_code", 200);
+
+    rtsp_stream::terminate_sessions();
+
+    if (proc::proc.running() > 0) {
+        proc::proc.terminate();
+    }
+
+    display_device::revert_configuration();
+
+    WriteResponse(response, tree);
 SAFE_SCOPE_END(response, tree)
 
 void H get_clipboard(HttpResponse response, HttpRequest request)
