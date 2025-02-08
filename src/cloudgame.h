@@ -14,14 +14,25 @@
 
 #include "nvhttp.h"
 
-#define CLOUDGAME_API_URL           "http://10.202.9.24:7000/"
-#define CLOUDGAME_API_VERSION_1_URL CLOUDGAME_API_URL "v1/"
+// #define CLOUDGAME_API_URL           "http://10.202.9.24:7000"
+// #define CLOUDGAME_API_VERSION_1_URL CLOUDGAME_API_URL "/v1"
+
+#define CLOUDGAME_API_URL           (config::nvhttp.cloudgame_service_url)
+#define CLOUDGAME_API_VERSION_1_URL CLOUDGAME_API_URL
 
 #define CLOUDGAME_API_SELECTED_VERSION_URL CLOUDGAME_API_VERSION_1_URL
 
-#define CLOUDGAME_API_ENDPOINT_USER CLOUDGAME_API_SELECTED_VERSION_URL "user/"
+#define CLOUDGAME_API_ENDPOINT_USER (CLOUDGAME_API_SELECTED_VERSION_URL + "/user")
 
-#define CLOUDGAME_API_ENDPOINT_USER_PROFILE CLOUDGAME_API_ENDPOINT_USER "profile/"
+#define CLOUDGAME_API_ENDPOINT_USER_PROFILE (CLOUDGAME_API_ENDPOINT_USER + "/profile")
+#define CLOUDGAME_API_ENDPOINT_USER_SETTING (CLOUDGAME_API_ENDPOINT_USER + "/setting")
+
+#define CLOUDGAME_API_ENDPOINT_USER_SETTING_GET_TIMEOUT_DETAILS (CLOUDGAME_API_ENDPOINT_USER_SETTING + "/getTimeAmountDetails")
+
+#define CLOUDGAME_API_AUTHENTICATION_HEADER_NAME "Authorization"
+#define CLOUDGAME_API_AUTHENTICATION_BEARER "Bearer "
+
+#define CLOUDGAME_DISABLE_VALIDATION (false)
 
 namespace Cloudgame {
     using namespace nvhttp;
@@ -56,6 +67,7 @@ namespace Cloudgame {
         const std::string& GetResponse() const;
         HeaderMap&         GetHeaders();
         const HeaderMap&   GetHeaders() const;
+        struct curl_slist* GetHeaderListHandle() const;
 
         CURL* GetHandle() const;
 
@@ -73,7 +85,8 @@ namespace Cloudgame {
         CURL* handle;
         bool  ready;
 
-        HeaderMap headers;
+        HeaderMap          headers;
+        struct curl_slist* headerListHandle;
 
         static size_t WriteDataCallback(void* content, size_t size, size_t nmemb, std::string* response);
 
@@ -94,7 +107,7 @@ namespace Cloudgame {
 
     void Initialize(HttpServer& server, bool& host_audio);
 
-    void PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method = "GET");
+    void PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method = "GET", std::string jwToken = "");
 
     template<typename KeyType = std::string>
     bool PTreeExistsItem(const pt::ptree& tree, KeyType key) {

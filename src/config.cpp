@@ -1191,6 +1191,8 @@ namespace config {
     path_f(vars, "log_path", config::sunshine.log_file);
     path_f(vars, "file_state", nvhttp.file_state);
 
+    string_f(vars, "cloudgame_service_url", nvhttp.cloudgame_service_url);
+
     // Must be run after "file_state"
     config::sunshine.credentials_file = config::nvhttp.file_state;
     path_f(vars, "credentials_file", config::sunshine.credentials_file);

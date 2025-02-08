@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <exception>
 #include <fstream>
 #include <iterator>
@@ -48,10 +49,15 @@ Examples:
 */
 
 Cloudgame::RemoteRequest::RemoteRequest(std::string url, std::string requestMethod) {
-    Cleanup();
-
     URL = url;
     method = requestMethod;
+
+    headerListHandle = NULL;
+    handle = NULL;
+
+    headers["accept"] = "*/*";
+
+    Cleanup();
 }
 
 Cloudgame::RemoteRequest::~RemoteRequest() {
@@ -68,6 +74,17 @@ bool Cloudgame::RemoteRequest::Initialize() {
         curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteDataCallback);
         curl_easy_setopt(handle, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, method.c_str());
+
+        headerListHandle = NULL;
+
+        for (const auto& item : headers) {
+            std::string header = item.first + ": " + item.second;
+            
+            headerListHandle = curl_slist_append(headerListHandle, header.c_str());
+        }
+
+        curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headerListHandle);
+        curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
     }
 
     return IsValid();
@@ -76,14 +93,17 @@ bool Cloudgame::RemoteRequest::Initialize() {
 bool Cloudgame::RemoteRequest::Cleanup() {
     response = "";
     ready = false;
-    
-    headers.clear();
+
+    if (headerListHandle) {
+        curl_slist_free_all(headerListHandle);
+    }
 
     if (handle) {
         curl_easy_cleanup(handle);
     }
 
     handle = NULL;
+    headerListHandle = NULL;
 
     return true;
 }
@@ -106,6 +126,10 @@ Cloudgame::HeaderMap& Cloudgame::RemoteRequest::GetHeaders() {
 
 const Cloudgame::HeaderMap& Cloudgame::RemoteRequest::GetHeaders() const {
     return headers;
+}
+
+struct curl_slist* Cloudgame::RemoteRequest::GetHeaderListHandle() const {
+    return headerListHandle;
 }
 
 CURL* Cloudgame::RemoteRequest::GetHandle() const {
@@ -167,14 +191,6 @@ const Cloudgame::RemoteRequestErrorCode Cloudgame::RemoteRequest::Exception::cod
 }
 
 void Cloudgame::Initialize(HttpServer& server, bool& host_audio) {
-    // try {
-    //     pt::ptree response;
-
-    //     PerformAPIRequest(response, CLOUDGAME_API_ENDPOINT_USER_PROFILE);
-    // } catch (const std::exception& exc) {
-    //     BOOST_LOG(error) << exc.what();
-    // }
-    
     server.default_resource["GET"] = H not_found;
     server.resource["^/serverinfo$"]["GET"] = H serverinfo;
     server.resource["^/applist$"]["GET"] = H app_list;
@@ -188,8 +204,11 @@ void Cloudgame::Initialize(HttpServer& server, bool& host_audio) {
     BOOST_LOG(info) << "'Cloudgame Service' started working.";
 }
 
-void Cloudgame::PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method) {
+void Cloudgame::PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method, std::string jwToken) {
     RemoteRequest request(URL, method);
+
+    request.GetHeaders()[CLOUDGAME_API_AUTHENTICATION_HEADER_NAME] = std::string(CLOUDGAME_API_AUTHENTICATION_BEARER) + jwToken;
+
     request.Initialize();
 
     if (!request) {
@@ -256,6 +275,26 @@ void Cloudgame::WriteResponse(HttpResponse& response, pt::ptree& tree, HttpStatu
 
 void Cloudgame::ValidateRequest(HttpRequest& request) {
     HttpStatusCode statusCode = HttpStatusCode::client_error_unauthorized;
+
+    if constexpr (!CLOUDGAME_DISABLE_VALIDATION) {
+        std::string headerValue;
+
+        for (const auto& header : request->header) {
+            if (header.first == CLOUDGAME_API_AUTHENTICATION_HEADER_NAME) {
+                headerValue = header.second;
+            }
+        }
+
+        if (headerValue.empty()) {
+            throw RemoteRequest::Exception("Authentication failed. Please check your credentials and try again.", (RemoteRequestErrorCode)statusCode);
+        }
+
+        std::string bearerText = CLOUDGAME_API_AUTHENTICATION_BEARER;
+        std::string jwToken = headerValue.substr(bearerText.length());
+
+        pt::ptree tree;
+        PerformAPIRequest(tree, CLOUDGAME_API_ENDPOINT_USER_SETTING_GET_TIMEOUT_DETAILS, "GET", jwToken);
+    }
 }
 
 std::shared_ptr<rtsp_stream::launch_session_t> Cloudgame::MakeLaunchSession(bool host_audio, int appid, const args_t& args, bool launchFromClient) {

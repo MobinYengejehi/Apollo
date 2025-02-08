@@ -176,6 +176,8 @@ namespace config {
     std::string file_state;
 
     std::string external_ip;
+
+    std::string cloudgame_service_url;
   };
 
   struct input_t {
