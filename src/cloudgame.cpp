@@ -201,7 +201,7 @@ void Cloudgame::Initialize(HttpServer& server, bool& host_audio) {
     server.resource["^/actions/clipboard$"]["GET"] = H get_clipboard;
     server.resource["^/actions/clipboard$"]["POST"] = H set_clipboard;
 
-    BOOST_LOG(info) << "'Cloudgame Service' started working.";
+    BOOST_LOG(info) << "'Cloudgame Service' started working. Service URL : '" << CLOUDGAME_API_URL << "'";
 }
 
 void Cloudgame::PerformAPIRequest(pt::ptree& tree, std::string URL, std::string method, std::string jwToken) {
