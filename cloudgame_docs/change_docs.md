@@ -90,4 +90,9 @@ To set `Cloudgame Service API URL` you must open the `sunshine.conf` file and ad
 cloudgame_service_url = http://your.domain:yourport/path
 ```
 
+Example:
+```conf
+cloudgame_service_url = http://10.202.9.24:7000/v1
+```
+
 Now restart the application. The service will work with new URL.
